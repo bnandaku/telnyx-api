@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"gh auth status 2>&1 && gh repo view bnandaku/telnyx-api 2>&1\",\"description\":\"Check GitHub auth and repo existence\"}",
-  "error": "Exit code 1\ngithub.com\n  ✓ Logged in to github.com account bnandaku (keyring)\n  - Active account: true\n  - Git operations protocol: ssh\n  - Token: gho_************************************\n  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'\nGraphQL: Could not resolve to a Repository with the name 'bnandaku/telnyx-api'. (repository)",
-  "timestamp": "2026-05-13T23:02:46.141Z",
-  "retry_count": 1
-}
