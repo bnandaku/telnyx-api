@@ -10,6 +10,15 @@ A Go client library for the [Telnyx](https://telnyx.com) API covering:
 - **Phone Numbers** — Search, purchase, update, and release numbers
 - **Number Lookup** — Carrier, CNAM, and LERG/portability lookup
 - **Recordings & Transcriptions** — List, retrieve, and delete call recordings
+- **Media Storage** — Upload (URL or multipart), list, get, and delete media files
+- **Fax** — Send faxes (URL or file), manage fax applications, list and cancel faxes
+- **FQDN Connections** — Create and manage FQDN-based SIP connections and individual FQDNs
+- **Verify / OTP** — Trigger SMS, call, and flashcall verifications; submit codes; manage verify profiles
+- **Connections** — Credential and IP connection CRUD
+- **Billing Groups** — Billing group CRUD
+- **CDR Reports** — Request, poll, list, and delete call detail record reports
+- **Audit Logs** — List account audit events with date and sort filters
+- **Webhook Deliveries** — Query delivery history and retry status
 
 Zero external dependencies — only the Go standard library.
 
@@ -891,6 +900,271 @@ handler.OnFallback(func(ctx context.Context, event telnyx.Event, payload any) er
 ### Signature verification
 
 Every request is verified using ED25519. Requests with an invalid or missing `Telnyx-Signature-Ed25519` header receive `401 Unauthorized`. Webhooks older than 5 minutes are rejected to prevent replay attacks.
+
+---
+
+## Media Storage
+
+```go
+// Upload from URL
+media, err := client.UploadMediaFromURL(ctx, telnyx.UploadMediaFromURLRequest{
+    MediaURL:  "https://example.com/hold.mp3",
+    MediaName: "hold-music",
+})
+fmt.Println(media.MediaName, media.ContentType)
+
+// Upload a local file
+f, _ := os.Open("audio.mp3")
+defer f.Close()
+media, err = client.UploadMediaFile(ctx, "audio.mp3", "audio/mpeg", f)
+
+// List media
+items, meta, err := client.ListMedia(ctx, telnyx.ListMediaParams{
+    PageNumber:  1,
+    PageSize:    25,
+    ContentType: "audio/mpeg",
+})
+
+// Get and delete
+media, err = client.GetMedia(ctx, media.MediaName)
+err = client.DeleteMedia(ctx, media.MediaName)
+```
+
+---
+
+## Fax
+
+### Send a fax
+
+```go
+fax, err := client.SendFax(ctx, telnyx.SendFaxRequest{
+    ConnectionID: "your-connection-id",
+    To:           "+15550002222",
+    From:         "+15550001111",
+    MediaURL:     "https://example.com/document.pdf",
+    Quality:      "high",    // normal | high | very-high
+    StoreMedia:   true,
+})
+fmt.Println(fax.ID, fax.Status)
+```
+
+### Get / list / cancel / delete faxes
+
+```go
+fax, err := client.GetFax(ctx, fax.ID)
+
+faxes, meta, err := client.ListFaxes(ctx, telnyx.ListFaxesParams{
+    PageNumber: 1,
+    PageSize:   25,
+    FilterTo:   "+15550002222",
+})
+
+fax, err = client.CancelFax(ctx, fax.ID)
+err = client.DeleteFax(ctx, fax.ID)
+```
+
+### Fax applications
+
+```go
+app, err := client.CreateFaxApplication(ctx, telnyx.CreateFaxApplicationRequest{
+    ApplicationName: "My Fax App",
+    WebhookEventURL: "https://yourserver.com/webhooks/fax",
+})
+
+app, err = client.GetFaxApplication(ctx, app.ID)
+apps, meta, err := client.ListFaxApplications(ctx, 1, 20)
+err = client.DeleteFaxApplication(ctx, app.ID)
+```
+
+---
+
+## FQDN Connections
+
+```go
+conn, err := client.CreateFQDNConnection(ctx, telnyx.CreateFQDNConnectionRequest{
+    ConnectionName:    "My FQDN Connection",
+    TransportProtocol: "UDP",
+    WebhookEventURL:   "https://yourserver.com/webhooks",
+})
+
+// Add an FQDN to the connection
+fqdn, err := client.CreateFQDN(ctx, telnyx.CreateFQDNRequest{
+    ConnectionID:  conn.ID,
+    FQDN:          "sip.example.com",
+    DNSRecordType: "a",
+    Port:          5060,
+})
+
+conns, meta, err := client.ListFQDNConnections(ctx, telnyx.ListFQDNConnectionsParams{
+    PageNumber: 1,
+    PageSize:   20,
+})
+
+fqdns, meta, err := client.ListFQDNs(ctx, conn.ID, 1, 50)
+
+err = client.DeleteFQDN(ctx, fqdn.ID)
+err = client.DeleteFQDNConnection(ctx, conn.ID)
+```
+
+---
+
+## Verify / OTP
+
+### Send a verification
+
+```go
+// Via SMS
+v, err := client.SendVerificationSMS(ctx, telnyx.CreateVerificationSMSRequest{
+    PhoneNumber:     "+15550001111",
+    VerifyProfileID: "profile-uuid",
+})
+
+// Via phone call
+v, err = client.SendVerificationCall(ctx, telnyx.CreateVerificationCallRequest{
+    PhoneNumber:     "+15550001111",
+    VerifyProfileID: "profile-uuid",
+})
+
+// Via flashcall (missed call with code in caller ID)
+v, err = client.SendVerificationFlashcall(ctx, telnyx.CreateVerificationFlashcallRequest{
+    PhoneNumber:     "+15550001111",
+    VerifyProfileID: "profile-uuid",
+})
+
+fmt.Println(v.ID, v.Status) // pending | accepted | invalid | expired | error
+```
+
+### Submit a code
+
+```go
+// By verification ID
+resp, err := client.VerifyCodeByID(ctx, v.ID, telnyx.VerifyCodeByIDRequest{
+    Code: "123456",
+})
+fmt.Println(resp.ResponseCode) // accepted | rejected
+
+// By phone number
+resp, err = client.VerifyCodeByPhone(ctx, "+15550001111", telnyx.VerifyCodeByPhoneRequest{
+    Code:            "123456",
+    VerifyProfileID: "profile-uuid",
+})
+```
+
+### Verify profiles
+
+```go
+profile, err := client.CreateVerifyProfile(ctx, telnyx.CreateVerifyProfileRequest{
+    Name:     "My App",
+    Language: "en-US",
+})
+
+profile, err = client.GetVerifyProfile(ctx, profile.ID)
+profiles, meta, err := client.ListVerifyProfiles(ctx, 1, 20)
+err = client.DeleteVerifyProfile(ctx, profile.ID)
+```
+
+---
+
+## Billing Groups
+
+```go
+group, err := client.CreateBillingGroup(ctx, telnyx.BillingGroupRequest{Name: "Team A"})
+group, err = client.GetBillingGroup(ctx, group.ID)
+
+groups, meta, err := client.ListBillingGroups(ctx, 1, 20)
+
+group, err = client.UpdateBillingGroup(ctx, group.ID, telnyx.BillingGroupRequest{Name: "Team B"})
+err = client.DeleteBillingGroup(ctx, group.ID)
+```
+
+---
+
+## Connections
+
+### Credential connections
+
+```go
+conn, err := client.CreateCredentialConnection(ctx, telnyx.CreateCredentialConnectionRequest{
+    Name:     "My SIP Trunk",
+    Username: "alice",
+    Password: "s3cr3t",
+})
+
+conn, err = client.GetCredentialConnection(ctx, conn.ID)
+conns, meta, err := client.ListCredentialConnections(ctx, 1, 20)
+err = client.DeleteCredentialConnection(ctx, conn.ID)
+```
+
+### IP connections
+
+```go
+ipConn, err := client.CreateIPConnection(ctx, telnyx.CreateIPConnectionRequest{
+    Name: "My IP Trunk",
+})
+
+ipConn, err = client.GetIPConnection(ctx, ipConn.ID)
+ipConns, meta, err := client.ListIPConnections(ctx, 1, 20)
+err = client.DeleteIPConnection(ctx, ipConn.ID)
+```
+
+---
+
+## CDR Reports
+
+```go
+report, err := client.CreateCDRReport(ctx, telnyx.CDRFilter{
+    StartTime: "2024-01-01T00:00:00Z",
+    EndTime:   "2024-01-31T23:59:59Z",
+    Timezone:  "UTC",
+    CallTypes: []int{1, 2}, // 1=Inbound, 2=Outbound
+})
+
+// Poll until complete
+for report.Status != telnyx.CDRStatusComplete {
+    time.Sleep(5 * time.Second)
+    report, err = client.GetCDRReport(ctx, report.ID)
+}
+
+reports, meta, err := client.ListCDRReports(ctx, 1, 20)
+err = client.DeleteCDRReport(ctx, report.ID)
+```
+
+---
+
+## Audit Logs
+
+```go
+logs, meta, err := client.ListAuditLogs(ctx, telnyx.ListAuditLogsParams{
+    PageNumber:    1,
+    PageSize:      50,
+    CreatedAfter:  "2024-01-01T00:00:00Z",
+    CreatedBefore: "2024-12-31T23:59:59Z",
+    Sort:          "desc",
+})
+for _, l := range logs {
+    fmt.Printf("%s: %s on %s\n", l.CreatedAt, l.ChangeType, l.ResourceID)
+}
+```
+
+---
+
+## Webhook Deliveries
+
+```go
+// List recent failed deliveries
+deliveries, meta, err := client.ListWebhookDeliveries(ctx, telnyx.ListWebhookDeliveriesParams{
+    FilterStatus:       "failed",
+    FilterStartedAtGTE: "2024-01-01T00:00:00Z",
+    PageNumber:         1,
+    PageSize:           20,
+})
+for _, d := range deliveries {
+    fmt.Printf("%s: %s → HTTP %d\n", d.Webhook.EventType, d.Status, d.Attempts[len(d.Attempts)-1].Response.Status)
+}
+
+// Get a single delivery with full attempt log
+delivery, err := client.GetWebhookDelivery(ctx, "delivery-uuid")
+```
 
 ---
 
